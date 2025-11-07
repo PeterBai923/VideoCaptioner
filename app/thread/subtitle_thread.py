@@ -13,7 +13,6 @@ from app.core.subtitle_processor.summarization import SubtitleSummarizer
 from app.core.subtitle_processor.optimize import SubtitleOptimizer
 from app.core.subtitle_processor.translate import TranslatorFactory, TranslatorType
 from app.core.utils.logger import setup_logger
-from app.core.utils.test_opanai import test_openai
 from app.core.storage.cache_manager import ServiceUsageManager
 from app.core.storage.database import DatabaseManager
 from app.config import CACHE_PATH
@@ -62,16 +61,6 @@ class SubtitleThread(QThread):
             return self.task.subtitle_config
 
         if self.task.subtitle_config.base_url and self.task.subtitle_config.api_key:
-            if not test_openai(
-                self.task.subtitle_config.base_url,
-                self.task.subtitle_config.api_key,
-                self.task.subtitle_config.llm_model,
-            )[0]:
-                raise Exception(
-                    self.tr(
-                        "（字幕断句或字幕修正需要大模型）\nOpenAI API 测试失败, 请检查LLM配置"
-                    )
-                )
             # 增加服务使用次数
             if self.task.subtitle_config.base_url == public_base_url:
                 self.service_manager.increment_usage("llm", self.MAX_DAILY_LLM_CALLS)
@@ -108,7 +97,7 @@ class SubtitleThread(QThread):
             if subtitle_config.need_split and not asr_data.is_word_timestamp():
                 asr_data.split_to_word_segments()
 
-            # 获取API配置，会先检查可用性（优先使用设置的API，其次使用自带的公益API）
+            # 获取API配置（优先使用设置的API，其次使用自带的公益API）
             if (
                 subtitle_config.need_optimize
                 or asr_data.is_word_timestamp()
@@ -124,7 +113,6 @@ class SubtitleThread(QThread):
                     )
                 )
             ):
-                self.progress.emit(2, self.tr("开始验证API配置..."))
                 subtitle_config = self._setup_api_config()
                 os.environ["OPENAI_BASE_URL"] = subtitle_config.base_url
                 os.environ["OPENAI_API_KEY"] = subtitle_config.api_key
