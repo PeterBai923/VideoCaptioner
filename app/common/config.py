@@ -151,6 +151,10 @@ class Config(QConfig):
         OptionsValidator(TranscribeLanguageEnum),
         EnumSerializer(TranscribeLanguageEnum),
     )
+    # 并发转写任务数量（默认 4，范围 1-16）
+    transcribe_concurrency = RangeConfigItem(
+        "Transcribe", "Concurrency", 2, RangeValidator(1, 16)
+    )
 
     # ------------------- Whisper Cpp 配置 -------------------
     whisper_model = OptionsConfigItem(

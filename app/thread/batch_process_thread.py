@@ -7,6 +7,12 @@ import time
 from functools import partial
 
 
+from app.common.config import cfg
+from app.core.entities import (
+    BatchTaskStatus,
+    BatchTaskType,
+    TranscribeTask,
+)
 from app.core.task_factory import TaskFactory
 from app.core.entities import (
     TranscribeTask,
@@ -43,7 +49,8 @@ class BatchProcessThread(QThread):
         super().__init__()
         self.task_queue = queue.Queue()
         self.current_tasks: Dict[str, BatchTask] = {}
-        self.max_concurrent_tasks = 1
+        # 默认并发任务数来自配置，默认 4
+        self.max_concurrent_tasks = cfg.transcribe_concurrency.value
         self.is_running = False
         self.factory = TaskFactory()
         self.threads = []  # 保存所有创建的线程
