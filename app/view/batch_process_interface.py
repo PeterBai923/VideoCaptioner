@@ -27,6 +27,7 @@ from qfluentwidgets import (
 )
 import os
 
+from app.common.config import cfg
 from app.thread.batch_process_thread import (
     BatchProcessThread,
     BatchTask,
@@ -64,7 +65,8 @@ class BatchProcessInterface(QWidget):
         # 任务类型选择
         self.task_type_combo = ComboBox()
         self.task_type_combo.addItems([str(task_type) for task_type in BatchTaskType])
-        self.task_type_combo.setCurrentText(str(BatchTaskType.FULL_PROCESS))
+        # 从配置中读取上次选择的任务类型
+        self.task_type_combo.setCurrentText(str(cfg.batch_task_type.value))
 
         # 控制按钮
         self.add_file_btn = PushButton("添加文件", icon=FIF.ADD)
@@ -425,6 +427,8 @@ class BatchProcessInterface(QWidget):
         self.task_table.setRowCount(0)
 
     def on_task_type_changed(self, task_type):
+        # 保存当前选择的任务类型到配置
+        cfg.set(cfg.batch_task_type, BatchTaskType(task_type))
         # 清空当前任务列表
         self.clear_tasks()
 

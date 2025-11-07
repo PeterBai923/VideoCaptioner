@@ -21,6 +21,7 @@ from qfluentwidgets import (
 
 from app.config import WORK_PATH, SETTINGS_PATH
 from ..core.entities import (
+    BatchTaskType,
     LLMServiceEnum,
     SplitTypeEnum,
     TargetLanguageEnum,
@@ -253,6 +254,15 @@ class Config(QConfig):
 
     # ------------------- 保存配置 -------------------
     work_dir = ConfigItem("Save", "Work_Dir", WORK_PATH, FolderValidator())
+
+    # ------------------- 批量处理配置 -------------------
+    batch_task_type = OptionsConfigItem(
+        "Batch",
+        "TaskType",
+        BatchTaskType.FULL_PROCESS,
+        OptionsValidator(BatchTaskType),
+        EnumSerializer(BatchTaskType),
+    )
 
     # ------------------- 软件页面配置 -------------------
     micaEnabled = ConfigItem("MainWindow", "MicaEnabled", False, BoolValidator())
