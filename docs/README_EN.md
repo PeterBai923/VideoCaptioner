@@ -12,14 +12,15 @@
 
 Kaka Subtitle Assistant (VideoCaptioner) is easy to operate and doesn't require high-end hardware. It supports both online API calls and local offline processing (with GPU support) for speech recognition.  It leverages Large Language Models (LLMs) for intelligent subtitle segmentation, correction, and translation.  It offers a one-click solution for the entire video subtitle workflow!  Add stunning subtitles to your videos.
 
-The latest version now supports VAD, vocal separation, word-level timestamps, batch subtitle processing, and other practical features.
+ The latest version now supports VAD, vocal separation, word-level timestamps, batch subtitle processing, and other practical features.
 
-- 🎯 No GPU required to use powerful speech recognition engines for accurate subtitle generation.
-- ✂️ LLM-based intelligent segmentation and sentence breaking for more natural subtitle reading.
-- 🔄 AI subtitle multi-threading optimization and translation, adjusting subtitle format and making expressions more idiomatic and professional.
-- 🎬 Supports batch video subtitle synthesis, improving processing efficiency.
-- 📝 Intuitive subtitle editing and viewing interface, supporting real-time preview and quick editing.
-- 🤖 Low model token consumption, and built-in basic LLM model to ensure out-of-the-box use.
+ - 🎯 No GPU required to use powerful speech recognition engines for accurate subtitle generation.
+ - ✂️ LLM-based intelligent segmentation and sentence breaking for more natural subtitle reading.
+ - 🔄 AI subtitle multi-threading optimization and translation, adjusting subtitle format and making expressions more idiomatic and professional.
+ - 🎬 Supports batch video subtitle synthesis, improving processing efficiency.
+ - ⏸ Supports pausing/resuming batch tasks, and automatically saving the batch task list on exit so you can resume later.
+ - 📝 Intuitive subtitle editing and viewing interface, supporting real-time preview and quick editing.
+ - 🤖 Low model token consumption, and built-in basic LLM model to ensure out-of-the-box use.
 
 ## 📸 Interface Preview
 
@@ -233,7 +234,7 @@ The main directory structure after installing the software is as follows:
 VideoCaptioner/
 ├── runtime/                    # Runtime environment directory (do not modify)
 ├── resources/               # Software resource file directory (binaries, icons, etc., and downloaded faster-whisper program)
-├── work-dir/               # Working directory, where processed videos and subtitle files are saved
+├── work-dir/               # Working directory, where processed videos, subtitle files, and batch task state files are saved
 ├── AppData/                    # Application data directory
     ├── cache/              # Cache directory, caching transcription and large model request data.
     ├── models/              # Stores Whisper model files
