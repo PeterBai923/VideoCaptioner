@@ -161,6 +161,12 @@ class MainWindow(FluentWindow):
         # self.batchProcessInterface.close()
         # self.subtitleStyleInterface.close()
         # self.settingInterface.close()
+        if hasattr(self, "batchProcessInterface"):
+            try:
+                self.batchProcessInterface._reset_running_tasks_to_waiting()
+                self.batchProcessInterface._save_tasks_state()
+            except Exception:
+                pass
         super().closeEvent(event)
 
         # 强制退出应用程序

@@ -26,8 +26,10 @@ from qfluentwidgets import (
     FluentIcon as FIF,
 )
 import os
+import json
 
 from app.common.config import cfg
+from app.config import WORK_PATH
 from app.thread.batch_process_thread import (
     BatchProcessThread,
     BatchTask,
@@ -41,6 +43,9 @@ from app.core.entities import (
 from app.core.entities import BatchTaskType, BatchTaskStatus
 
 
+BATCH_TASK_STATE_FILE = WORK_PATH / "batch_tasks.json"
+
+
 class BatchProcessInterface(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -51,6 +56,7 @@ class BatchProcessInterface(QWidget):
 
         self.init_ui()
         self.setup_connections()
+        self._load_tasks_state()
 
     def init_ui(self):
         # 创建主布局
@@ -469,6 +475,84 @@ class BatchProcessInterface(QWidget):
         self.task_table.setRowCount(0)
         self.pause_btn.setText("暂停处理")
 
+    def _reset_running_tasks_to_waiting(self):
+        for row in range(self.task_table.rowCount()):
+            status_item = self.task_table.item(row, 2)
+            if not status_item:
+                continue
+            status_text = status_item.text()
+            if status_text in [
+                str(BatchTaskStatus.WAITING),
+                str(BatchTaskStatus.COMPLETED),
+                str(BatchTaskStatus.FAILED),
+            ]:
+                continue
+
+            status_item.setText(str(BatchTaskStatus.WAITING))
+            status_item.setForeground(Qt.gray)
+
+    def _save_tasks_state(self):
+        try:
+            tasks = []
+            for row in range(self.task_table.rowCount()):
+                file_item = self.task_table.item(row, 0)
+                status_item = self.task_table.item(row, 2)
+                if not file_item or not status_item:
+                    continue
+
+                file_path = file_item.toolTip()
+                progress_bar = self.task_table.cellWidget(row, 1)
+                progress = progress_bar.value() if progress_bar is not None else 0
+                status_text = status_item.text()
+
+                tasks.append(
+                    {
+                        "file_path": file_path,
+                        "progress": progress,
+                        "status": status_text,
+                    }
+                )
+
+            with open(BATCH_TASK_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(tasks, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _load_tasks_state(self):
+        if not BATCH_TASK_STATE_FILE.exists():
+            return
+
+        try:
+            with open(BATCH_TASK_STATE_FILE, "r", encoding="utf-8") as f:
+                tasks = json.load(f)
+        except Exception:
+            return
+
+        if not isinstance(tasks, list):
+            return
+
+        for item in tasks:
+            file_path = item.get("file_path")
+            if not file_path or not os.path.exists(file_path):
+                continue
+
+            self.add_task_to_table(file_path)
+            row = self.task_table.rowCount() - 1
+
+            progress_bar = self.task_table.cellWidget(row, 1)
+            progress = int(item.get("progress", 0))
+            if progress_bar is not None:
+                progress_bar.setValue(progress)
+
+            status_text = item.get("status", str(BatchTaskStatus.WAITING))
+            status_item = self.task_table.item(row, 2)
+            if status_item is not None:
+                status_item.setText(status_text)
+                if status_text == str(BatchTaskStatus.WAITING):
+                    status_item.setForeground(Qt.gray)
+                elif status_text == str(BatchTaskStatus.COMPLETED):
+                    status_item.setForeground(QColor("#13A10E"))
+
     def on_task_type_changed(self, task_type):
         # 保存当前选择的任务类型到配置
         cfg.set(cfg.batch_task_type, BatchTaskType(task_type))
@@ -476,6 +560,8 @@ class BatchProcessInterface(QWidget):
         self.clear_tasks()
 
     def closeEvent(self, event):
+        self._reset_running_tasks_to_waiting()
+        self._save_tasks_state()
         self.batch_thread.stop_all()
         self.pause_btn.setText("暂停处理")
         super().closeEvent(event)
