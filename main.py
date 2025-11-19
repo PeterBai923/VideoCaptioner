@@ -1,4 +1,9 @@
 """
+Author: Peter_Bai
+Date: 2025-11-04 19:24:55
+KKDY保佑代码无BUG!: 
+"""
+"""
 Copyright (c) 2024 [VideoCaptioner]
 All rights reserved.
 

@@ -71,6 +71,7 @@ class BatchProcessInterface(QWidget):
         # 控制按钮
         self.add_file_btn = PushButton("添加文件", icon=FIF.ADD)
         self.start_all_btn = PushButton("开始处理", icon=FIF.PLAY)
+        self.pause_btn = PushButton("暂停处理")
         self.clear_btn = PushButton("清空列表", icon=FIF.DELETE)
 
         # 添加到顶部布局
@@ -79,6 +80,7 @@ class BatchProcessInterface(QWidget):
         top_layout.addWidget(self.clear_btn)
 
         top_layout.addStretch()
+        top_layout.addWidget(self.pause_btn)
         top_layout.addWidget(self.start_all_btn)
 
         # 创建任务表格
@@ -117,6 +119,7 @@ class BatchProcessInterface(QWidget):
         # 连接信号
         self.add_file_btn.clicked.connect(self.on_add_file_clicked)
         self.start_all_btn.clicked.connect(self.start_all_tasks)
+        self.pause_btn.clicked.connect(self.toggle_pause)
         self.clear_btn.clicked.connect(self.clear_tasks)
         self.task_type_combo.currentTextChanged.connect(self.on_task_type_changed)
 
@@ -353,6 +356,39 @@ class BatchProcessInterface(QWidget):
                 self.task_table.item(row, 2).setForeground(QColor("#13A10E"))
                 break
 
+    def toggle_pause(self):
+        # 如果没有正在运行的批处理线程，提示用户
+        if not self.batch_thread.is_running:
+            InfoBar.warning(
+                title="无正在处理的任务",
+                content="当前没有正在处理的任务",
+                duration=2000,
+                position=InfoBarPosition.TOP,
+                parent=self,
+            )
+            return
+
+        if not self.batch_thread.is_paused:
+            self.batch_thread.pause()
+            self.pause_btn.setText("恢复处理")
+            InfoBar.success(
+                title="已暂停",
+                content="批量处理已暂停，将不再分发新的任务",
+                duration=2000,
+                position=InfoBarPosition.TOP,
+                parent=self,
+            )
+        else:
+            self.batch_thread.resume()
+            self.pause_btn.setText("暂停处理")
+            InfoBar.success(
+                title="已恢复",
+                content="批量处理已恢复，将继续分发新的任务",
+                duration=2000,
+                position=InfoBarPosition.TOP,
+                parent=self,
+            )
+
     def start_all_tasks(self):
         # 检查是否有任务
         if self.task_table.rowCount() == 0:
@@ -381,6 +417,9 @@ class BatchProcessInterface(QWidget):
             )
             return
 
+        # 重置暂停按钮文字
+        self.pause_btn.setText("暂停处理")
+
         # 显示开始处理的提示
         InfoBar.success(
             title="开始处理",
@@ -389,6 +428,9 @@ class BatchProcessInterface(QWidget):
             position=InfoBarPosition.TOP,
             parent=self,
         )
+
+        # 重置暂停按钮文字
+        self.pause_btn.setText("暂停处理")
         # 开始处理任务
         for row in range(self.task_table.rowCount()):
             file_path = self.task_table.item(row, 0).toolTip()
@@ -425,6 +467,7 @@ class BatchProcessInterface(QWidget):
     def clear_tasks(self):
         self.batch_thread.stop_all()
         self.task_table.setRowCount(0)
+        self.pause_btn.setText("暂停处理")
 
     def on_task_type_changed(self, task_type):
         # 保存当前选择的任务类型到配置
@@ -434,6 +477,7 @@ class BatchProcessInterface(QWidget):
 
     def closeEvent(self, event):
         self.batch_thread.stop_all()
+        self.pause_btn.setText("暂停处理")
         super().closeEvent(event)
 
     def on_table_double_clicked(self, index):

@@ -52,8 +52,13 @@ class BatchProcessThread(QThread):
         # 默认并发任务数来自配置，默认 4
         self.max_concurrent_tasks = cfg.transcribe_concurrency.value
         self.is_running = False
+        self._paused = False
         self.factory = TaskFactory()
         self.threads = []  # 保存所有创建的线程
+
+    @property
+    def is_paused(self) -> bool:
+        return self._paused
 
     def add_task(self, task: BatchTask):
         self.task_queue.put(task)
@@ -64,6 +69,11 @@ class BatchProcessThread(QThread):
 
     def run(self):
         while self.is_running:
+            # 如果处于暂停状态，则暂不分发新的任务
+            if self._paused:
+                time.sleep(0.1)
+                continue
+
             # 检查是否有正在运行的任务数量是否达到上限
             running_tasks = sum(
                 1
@@ -80,6 +90,14 @@ class BatchProcessThread(QThread):
                     time.sleep(0.1)  # 避免CPU过度使用
             else:
                 time.sleep(0.1)
+
+    def pause(self):
+        """暂停从队列中分发新的任务。已在运行的任务会继续执行。"""
+        self._paused = True
+
+    def resume(self):
+        """恢复从队列中分发新的任务。"""
+        self._paused = False
 
     def _process_task(self, batch_task: BatchTask):
         try:
@@ -357,6 +375,7 @@ class BatchProcessThread(QThread):
 
     def stop_all(self):
         self.is_running = False
+        self._paused = False
         # 停止所有线程
         for thread in self.threads:
             if hasattr(thread, "stop"):
