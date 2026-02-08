@@ -18,6 +18,7 @@ from app.core.subtitle_processor.prompt import (
     SPLIT_PROMPT_SENTENCE,
 )
 from app.core.utils.logger import setup_logger
+from app.core.utils.openai_client_wrapper import with_openai_retry
 
 logger = setup_logger("subtitle_splitter")
 
@@ -404,6 +405,7 @@ class SubtitleSplitter:
                 logger.warning(f"分割重试 {i+1}/{self.retry_times}: {str(e)}")
         return self._process_by_rules(asr_data_part.segments)  # 确保总是有返回值
 
+    @with_openai_retry(max_retries=20, delay_increment=0.5)
     def _process_by_llm(self, segments: List[ASRDataSeg]) -> List[ASRDataSeg]:
         """
         使用LLM进行分段处理

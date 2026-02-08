@@ -4,6 +4,7 @@ from typing import Optional
 from openai import OpenAI
 
 from ..utils.logger import setup_logger
+from ..utils.openai_client_wrapper import with_openai_retry
 from .asr_data import ASRData, ASRDataSeg
 from .base import BaseASR
 
@@ -74,26 +75,23 @@ class WhisperAPI(BaseASR):
         """获取缓存键值"""
         return f"{self.crc32_hex}-{self.model}-{self.language}-{self.prompt}"
 
+    @with_openai_retry(max_retries=20, delay_increment=0.5)
     def _submit(self) -> dict:
         """提交音频进行识别"""
-        try:
-            if self.language == "zh" and not self.prompt:
-                self.prompt = "你好，我们需要使用简体中文，以下是普通话的句子。"
-            args = {}
-            if self.need_word_time_stamp and "groq" not in self.base_url:
-                args["timestamp_granularities"] = ["word", "segment"]
-            logger.info("开始识别音频...")
-            completion = self.client.audio.transcriptions.create(
-                model=self.model,
-                temperature=0,
-                response_format="verbose_json",
-                file=("audio.mp3", self.file_binary, "audio/mp3"),
-                prompt=self.prompt,
-                language=None,
-                **args,
-            )
-            logger.info("音频识别完成")
-            return completion.to_dict()
-        except Exception as e:
-            logger.exception(f"音频识别失败: {str(e)}")
-            raise e
+        if self.language == "zh" and not self.prompt:
+            self.prompt = "你好，我们需要使用简体中文，以下是普通话的句子。"
+        args = {}
+        if self.need_word_time_stamp and "groq" not in self.base_url:
+            args["timestamp_granularities"] = ["word", "segment"]
+        logger.info("开始识别音频...")
+        completion = self.client.audio.transcriptions.create(
+            model=self.model,
+            temperature=0,
+            response_format="verbose_json",
+            file=("audio.mp3", self.file_binary, "audio/mp3"),
+            prompt=self.prompt,
+            language=None,
+            **args,
+        )
+        logger.info("音频识别完成")
+        return completion.to_dict()

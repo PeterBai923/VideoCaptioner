@@ -4,6 +4,7 @@ from openai import OpenAI
 
 from ..utils import json_repair
 from ..utils.logger import setup_logger
+from ..utils.openai_client_wrapper import with_openai_retry
 from .prompt import SUMMARIZER_PROMPT
 
 logger = setup_logger("subtitle_summarizer")
@@ -20,25 +21,22 @@ class SubtitleSummarizer:
         self.model = model
         self.client = OpenAI(base_url=base_url, api_key=api_key)
 
+    @with_openai_retry(max_retries=20, delay_increment=0.5)
     def summarize(self, subtitle_content: str) -> str:
         logger.info(f"开始摘要化字幕内容")
-        try:
-            subtitle_content = subtitle_content[:3000]
-            response = self.client.chat.completions.create(
-                model=self.model,
-                stream=False,
-                messages=[
-                    {"role": "system", "content": SUMMARIZER_PROMPT},
-                    {
-                        "role": "user",
-                        "content": f"summarize the video content:\n{subtitle_content}",
-                    },
-                ],
-            )
-            return str(json_repair.loads(response.choices[0].message.content))
-        except Exception as e:
-            logger.exception(f"摘要化字幕内容失败: {e}")
-            return ""
+        subtitle_content = subtitle_content[:3000]
+        response = self.client.chat.completions.create(
+            model=self.model,
+            stream=False,
+            messages=[
+                {"role": "system", "content": SUMMARIZER_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"summarize the video content:\n{subtitle_content}",
+                },
+            ],
+        )
+        return str(json_repair.loads(response.choices[0].message.content))
 
 
 if __name__ == "__main__":

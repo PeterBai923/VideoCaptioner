@@ -28,6 +28,7 @@ from app.core.subtitle_processor.prompt import (
 from app.core.storage.cache_manager import CacheManager
 from app.config import CACHE_PATH
 from app.core.utils.logger import setup_logger
+from app.core.utils.openai_client_wrapper import with_openai_retry
 
 
 logger = setup_logger("subtitle_translator")
@@ -334,6 +335,7 @@ class OpenAITranslator(BaseTranslator):
 
         return result
 
+    @with_openai_retry(max_retries=20, delay_increment=0.5)
     def _call_api(self, prompt: str, user_content: Dict[str, str]) -> Any:
         """调用OpenAI API"""
         messages = [

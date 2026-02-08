@@ -15,6 +15,7 @@ from app.core.utils import json_repair
 from app.core.subtitle_processor.alignment import SubtitleAligner
 from app.core.subtitle_processor.prompt import OPTIMIZER_PROMPT
 from app.core.utils.logger import setup_logger
+from app.core.utils.openai_client_wrapper import with_openai_retry
 
 logger = setup_logger("subtitle_optimizer")
 
@@ -135,6 +136,7 @@ class SubtitleOptimizer:
                 logger.warning(f"优化重试 {i+1}/{self.retry_times}: {str(e)}")
         return chunk
 
+    @with_openai_retry(max_retries=20, delay_increment=0.5)
     def _optimize_chunk(self, subtitle_chunk: Dict[str, str]) -> Dict[str, str]:
         """优化字幕块"""
         logger.info(

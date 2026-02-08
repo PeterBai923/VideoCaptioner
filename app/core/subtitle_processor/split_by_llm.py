@@ -10,6 +10,7 @@ import retry
 from app.config import CACHE_PATH
 
 from ..utils.logger import setup_logger
+from ..utils.openai_client_wrapper import with_openai_retry
 from .prompt import SPLIT_SYSTEM_PROMPT
 
 logger = setup_logger("split_by_llm")
@@ -78,9 +79,9 @@ def split_by_llm(text: str,
         logger.error(f"断句失败: {e}")
         return [text]
 
-@retry.retry(tries=2)
-def split_by_llm_retry(text: str, 
-                       model: str = "gpt-4o-mini", 
+@with_openai_retry(max_retries=20, delay_increment=0.5)
+def split_by_llm_retry(text: str,
+                       model: str = "gpt-4o-mini",
                        use_cache: bool = False,
                        max_word_count_cjk: int = 18,
                        max_word_count_english: int = 12) -> List[str]:
