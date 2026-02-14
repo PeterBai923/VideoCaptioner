@@ -4,10 +4,7 @@ from datetime import timedelta
 
 
 class TranslatorType(Enum):
-    GOOGLE = "google"
-    BING = "bing"
     LLM = "llm"
-    DEEPLX = "deeplx"
 
 
 class OperationType(Enum):

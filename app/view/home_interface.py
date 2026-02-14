@@ -6,7 +6,6 @@ from app.core.task_factory import TaskFactory
 from app.view.subtitle_interface import SubtitleInterface
 from app.view.task_creation_interface import TaskCreationInterface
 from app.view.transcription_interface import TranscriptionInterface
-from app.view.video_synthesis_interface import VideoSynthesisInterface
 
 
 class HomeInterface(QWidget):
@@ -33,7 +32,6 @@ class HomeInterface(QWidget):
         self.task_creation_interface = TaskCreationInterface(self)
         self.transcription_interface = TranscriptionInterface(self)
         self.subtitle_optimization_interface = SubtitleInterface(self)
-        self.video_synthesis_interface = VideoSynthesisInterface(self)
 
         self.addSubInterface(
             self.task_creation_interface, "TaskCreationInterface", self.tr("任务创建")
@@ -45,11 +43,6 @@ class HomeInterface(QWidget):
             self.subtitle_optimization_interface,
             "SubtitleInterface",
             self.tr("字幕优化与翻译"),
-        )
-        self.addSubInterface(
-            self.video_synthesis_interface,
-            "VideoSynthesisInterface",
-            self.tr("字幕视频合成"),
         )
 
         self.vBoxLayout.addWidget(self.pivot)
@@ -63,9 +56,6 @@ class HomeInterface(QWidget):
         self.task_creation_interface.finished.connect(self.switch_to_transcription)
         self.transcription_interface.finished.connect(
             self.switch_to_subtitle_optimization
-        )
-        self.subtitle_optimization_interface.finished.connect(
-            self.switch_to_video_synthesis
         )
 
     def switch_to_transcription(self, file_path):
@@ -88,16 +78,6 @@ class HomeInterface(QWidget):
         self.stackedWidget.setCurrentWidget(self.subtitle_optimization_interface)
         self.pivot.setCurrentItem("SubtitleInterface")
 
-    def switch_to_video_synthesis(self, video_path, subtitle_path):
-        # 切换到视频合成界面
-        synthesis_task = TaskFactory.create_synthesis_task(
-            video_path, subtitle_path, need_next_task=True
-        )
-        self.video_synthesis_interface.set_task(synthesis_task)
-        self.video_synthesis_interface.process()
-        self.stackedWidget.setCurrentWidget(self.video_synthesis_interface)
-        self.pivot.setCurrentItem("VideoSynthesisInterface")
-
     def addSubInterface(self, widget, objectName, text):
         # 添加子界面到堆叠控件和分段控件
         widget.setObjectName(objectName)
@@ -119,5 +99,4 @@ class HomeInterface(QWidget):
         self.task_creation_interface.close()
         self.transcription_interface.close()
         self.subtitle_optimization_interface.close()
-        self.video_synthesis_interface.close()
         super().closeEvent(event)

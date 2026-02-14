@@ -100,9 +100,6 @@ class TranslatorServiceEnum(Enum):
     """翻译器服务"""
 
     OPENAI = "LLM 大模型翻译"
-    DEEPLX = "DeepLx 翻译"
-    BING = "微软翻译"
-    GOOGLE = "谷歌翻译"
 
 
 class VadMethodEnum(Enum):
@@ -533,12 +530,10 @@ class SubtitleConfig:
     base_url: Optional[str] = None
     api_key: Optional[str] = None
     llm_model: Optional[str] = None
-    deeplx_endpoint: Optional[str] = None
     # 翻译服务
     translator_service: Optional[TranslatorServiceEnum] = None
     need_translate: bool = False
     need_optimize: bool = False
-    need_reflect: bool = False
     thread_num: int = 10
     batch_size: int = 10
     # 字幕布局和分割
@@ -548,17 +543,10 @@ class SubtitleConfig:
     max_word_count_english: int = 18
     need_split: bool = True
     target_language: Optional[TargetLanguageEnum] = None
+    source_language: str = "English"  # 源语言（转录语言）
     subtitle_style: Optional[str] = None
     need_remove_punctuation: bool = False
     custom_prompt_text: Optional[str] = None
-
-
-@dataclass
-class SynthesisConfig:
-    """视频合成配置类"""
-
-    need_video: bool = True
-    soft_subtitle: bool = True
 
 
 @dataclass
@@ -597,31 +585,10 @@ class SubtitleTask:
     # 输出 断句、优化、翻译 后的字幕文件
     output_path: Optional[str] = None
 
-    # 是否需要执行下一个任务（视频合成）
+    # 是否需要执行下一个任务（工作流继续）
     need_next_task: bool = True
 
     subtitle_config: Optional[SubtitleConfig] = None
-
-
-@dataclass
-class SynthesisTask:
-    """视频合成任务类"""
-
-    queued_at: Optional[datetime.datetime] = None
-    started_at: Optional[datetime.datetime] = None
-    completed_at: Optional[datetime.datetime] = None
-
-    # 输入
-    video_path: Optional[str] = None
-    subtitle_path: Optional[str] = None
-
-    # 输出
-    output_path: Optional[str] = None
-
-    # 是否需要执行下一个任务（预留）
-    need_next_task: bool = False
-
-    synthesis_config: Optional[SynthesisConfig] = None
 
 
 @dataclass
@@ -644,7 +611,7 @@ class TranscriptAndSubtitleTask:
 
 @dataclass
 class FullProcessTask:
-    """完整处理任务类(转录+字幕+合成)"""
+    """完整处理任务类(转录+字幕)"""
 
     queued_at: Optional[datetime.datetime] = None
     started_at: Optional[datetime.datetime] = None
@@ -657,7 +624,6 @@ class FullProcessTask:
 
     transcribe_config: Optional[TranscribeConfig] = None
     subtitle_config: Optional[SubtitleConfig] = None
-    synthesis_config: Optional[SynthesisConfig] = None
 
 
 class BatchTaskType(Enum):

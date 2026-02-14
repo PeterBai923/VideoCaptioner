@@ -134,20 +134,6 @@ class SettingInterface(ScrollArea):
             self.tr("选择字幕的布局（单语、双语）"),
             self.subtitleGroup,
         )
-        self.needVideoCard = SwitchSettingCard(
-            FIF.VIDEO,
-            self.tr("需要合成视频"),
-            self.tr("开启时触发合成视频，关闭时跳过"),
-            cfg.need_video,
-            self.subtitleGroup,
-        )
-        self.softSubtitleCard = SwitchSettingCard(
-            FIF.FONT,
-            self.tr("软字幕"),
-            self.tr("开启时字幕可在播放器中关闭或调整，关闭时字幕烧录到视频画面上"),
-            cfg.soft_subtitle,
-            self.subtitleGroup,
-        )
 
         # 保存配置卡片
         self.savePathCard = PushSettingCard(
@@ -227,8 +213,6 @@ class SettingInterface(ScrollArea):
 
         self.subtitleGroup.addSettingCard(self.subtitleStyleCard)
         self.subtitleGroup.addSettingCard(self.subtitleLayoutCard)
-        self.subtitleGroup.addSettingCard(self.needVideoCard)
-        self.subtitleGroup.addSettingCard(self.softSubtitleCard)
 
         self.saveGroup.addSettingCard(self.savePathCard)
 
@@ -423,25 +407,6 @@ class SettingInterface(ScrollArea):
             parent=self.translate_serviceGroup,
         )
 
-        # 反思翻译开关
-        self.needReflectTranslateCard = SwitchSettingCard(
-            FIF.EDIT,
-            self.tr("需要反思翻译"),
-            self.tr("启用反思翻译可以提高翻译质量，但耗费更多时间和token"),
-            cfg.need_reflect_translate,
-            self.translate_serviceGroup,
-        )
-
-        # DeepLx端点配置
-        self.deeplxEndpointCard = LineEditSettingCard(
-            cfg.deeplx_endpoint,
-            FIF.LINK,
-            self.tr("DeepLx 后端"),
-            self.tr("输入 DeepLx 的后端地址(开启deeplx翻译时必填)"),
-            "https://api.deeplx.org/translate",
-            self.translate_serviceGroup,
-        )
-
         # 批处理大小配置
         self.batchSizeCard = RangeSettingCard(
             cfg.batch_size,
@@ -464,15 +429,8 @@ class SettingInterface(ScrollArea):
 
         # 添加卡片到翻译服务组
         self.translate_serviceGroup.addSettingCard(self.translatorServiceCard)
-        self.translate_serviceGroup.addSettingCard(self.needReflectTranslateCard)
-        self.translate_serviceGroup.addSettingCard(self.deeplxEndpointCard)
         self.translate_serviceGroup.addSettingCard(self.batchSizeCard)
         self.translate_serviceGroup.addSettingCard(self.threadNumCard)
-
-        # 初始化显示状态
-        self.__onTranslatorServiceChanged(
-            self.translatorServiceCard.comboBox.currentText()
-        )
 
     def __initWidget(self):
         self.resize(1000, 800)
@@ -485,11 +443,6 @@ class SettingInterface(ScrollArea):
         # 初始化样式表
         self.scrollWidget.setObjectName("scrollWidget")
         self.settingLabel.setObjectName("settingLabel")
-
-        # 初始化翻译服务配置卡片的显示状态
-        self.__onTranslatorServiceChanged(
-            self.translatorServiceCard.comboBox.currentText()
-        )
 
         self.setStyleSheet(
             """        
@@ -545,11 +498,6 @@ class SettingInterface(ScrollArea):
             self.__onLLMServiceChanged
         )
 
-        # 翻译服务切换
-        self.translatorServiceCard.comboBox.currentTextChanged.connect(
-            self.__onTranslatorServiceChanged
-        )
-
         # 检查 LLM 连接
         self.checkLLMConnectionCard.clicked.connect(self.checkLLMConnection)
 
@@ -589,8 +537,6 @@ class SettingInterface(ScrollArea):
         self.targetLanguageCard.comboBox.currentTextChanged.connect(
             signalBus.target_language_changed
         )
-        self.softSubtitleCard.checkedChanged.connect(signalBus.soft_subtitle_changed)
-        self.needVideoCard.checkedChanged.connect(signalBus.need_video_changed)
 
     def __showRestartTooltip(self):
         """显示重启提示"""
@@ -738,29 +684,6 @@ class SettingInterface(ScrollArea):
 
         # 更新布局
         self.llmGroup.adjustSize()
-        self.expandLayout.update()
-
-    def __onTranslatorServiceChanged(self, service):
-        openai_cards = [
-            self.needReflectTranslateCard,
-            self.batchSizeCard,
-        ]
-        deeplx_cards = [self.deeplxEndpointCard]
-
-        all_cards = openai_cards + deeplx_cards
-        for card in all_cards:
-            card.setVisible(False)
-
-        # 根据选择的服务显示相应的配置卡片
-        if service in [TranslatorServiceEnum.DEEPLX.value]:
-            for card in deeplx_cards:
-                card.setVisible(True)
-        elif service in [TranslatorServiceEnum.OPENAI.value]:
-            for card in openai_cards:
-                card.setVisible(True)
-
-        # 更新布局
-        self.translate_serviceGroup.adjustSize()
         self.expandLayout.update()
 
 

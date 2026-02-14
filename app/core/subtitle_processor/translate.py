@@ -4,27 +4,17 @@ from typing import Callable, Dict, Optional, List, Any, Union
 import logging
 from pathlib import Path
 import os
-import retry
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from abc import ABC, abstractmethod
 from enum import Enum
 from openai import OpenAI
 import json
 from dataclasses import dataclass
-from functools import lru_cache
-import signal
-import requests
 import re
-import html
-from urllib.parse import quote
 
 from app.core.bk_asr.asr_data import ASRData, ASRDataSeg
 from app.core.utils import json_repair
-from app.core.subtitle_processor.prompt import (
-    TRANSLATE_PROMPT,
-    REFLECT_TRANSLATE_PROMPT,
-    SINGLE_TRANSLATE_PROMPT,
-)
+from app.core.subtitle_processor.prompt import TRANSLATE_PROMPT, SINGLE_TRANSLATE_PROMPT
 from app.core.storage.cache_manager import CacheManager
 from app.config import CACHE_PATH
 from app.core.utils.logger import setup_logger
@@ -34,13 +24,31 @@ from app.core.utils.openai_client_wrapper import with_openai_retry
 logger = setup_logger("subtitle_translator")
 
 
+# 语言代码映射：名称 -> (英文名称, ISO代码)
+LANGUAGE_CODE_MAP = {
+    "简体中文": ("Chinese", "zh-Hans"),
+    "繁体中文": ("Chinese Traditional", "zh-Hant"),
+    "英语": ("English", "en"),
+    "日本語": ("Japanese", "ja"),
+    "韩语": ("Korean", "ko"),
+    "粤语": ("Cantonese", "yue"),
+    "法语": ("French", "fr"),
+    "德语": ("German", "de"),
+    "西班牙语": ("Spanish", "es"),
+    "俄语": ("Russian", "ru"),
+    "葡萄牙语": ("Portuguese", "pt"),
+    "土耳其语": ("Turkish", "tr"),
+    "Chinese": ("Chinese", "zh-Hans"),
+    "English": ("English", "en"),
+    "Japanese": ("Japanese", "ja"),
+    "Korean": ("Korean", "ko"),
+}
+
+
 class TranslatorType(Enum):
     """翻译器类型"""
 
     OPENAI = "openai"
-    GOOGLE = "google"
-    BING = "bing"
-    DEEPLX = "deeplx"
 
 
 class BaseTranslator(ABC):
@@ -51,6 +59,7 @@ class BaseTranslator(ABC):
         thread_num: int = 10,
         batch_num: int = 20,
         target_language: str = "Chinese",
+        source_language: str = "English",
         retry_times: int = 1,
         timeout: int = 60,
         update_callback: Optional[Callable] = None,
@@ -59,6 +68,7 @@ class BaseTranslator(ABC):
         self.thread_num = thread_num
         self.batch_num = batch_num
         self.target_language = target_language
+        self.source_language = source_language
         self.retry_times = retry_times
         self.timeout = timeout
         self.is_running = True
@@ -189,9 +199,9 @@ class OpenAITranslator(BaseTranslator):
         thread_num: int = 10,
         batch_num: int = 20,
         target_language: str = "Chinese",
+        source_language: str = "English",
         model: str = "gpt-4o-mini",
         custom_prompt: str = "",
-        is_reflect: bool = False,
         temperature: float = 0.7,
         timeout: int = 60,
         retry_times: int = 1,
@@ -201,6 +211,7 @@ class OpenAITranslator(BaseTranslator):
             thread_num=thread_num,
             batch_num=batch_num,
             target_language=target_language,
+            source_language=source_language,
             retry_times=retry_times,
             timeout=timeout,
             update_callback=update_callback,
@@ -209,8 +220,14 @@ class OpenAITranslator(BaseTranslator):
         self._init_client()
         self.model = model
         self.custom_prompt = custom_prompt
-        self.is_reflect = is_reflect
         self.temperature = temperature
+
+    def _get_language_info(self, lang: str) -> tuple:
+        """获取语言信息（英文名称和ISO代码）"""
+        if lang in LANGUAGE_CODE_MAP:
+            return LANGUAGE_CODE_MAP[lang]
+        # 默认返回原名称和相同代码
+        return (lang, lang.lower()[:2])
 
     def _init_client(self):
         """初始化OpenAI客户端"""
@@ -223,25 +240,33 @@ class OpenAITranslator(BaseTranslator):
 
     def _translate_chunk(self, subtitle_chunk: Dict[str, str]) -> Dict[str, str]:
         """翻译字幕块"""
+        return self._translate_chunk_standard(subtitle_chunk)
+
+    def _translate_chunk_standard(self, subtitle_chunk: Dict[str, str]) -> Dict[str, str]:
+        """标准非流式翻译字幕块"""
         logger.info(
             f"[+]正在翻译字幕：{next(iter(subtitle_chunk))} - {next(reversed(subtitle_chunk))}"
         )
 
-        # 获取提示词
-        if self.is_reflect:
-            prompt = REFLECT_TRANSLATE_PROMPT
-        else:
-            prompt = TRANSLATE_PROMPT
-        prompt = Template(prompt).safe_substitute(
-            target_language=self.target_language, custom_prompt=self.custom_prompt
-        )
-        prompt_hash = hashlib.md5(prompt.encode()).hexdigest()
+        source_lang, source_code = self._get_language_info(self.source_language)
+        target_lang, target_code = self._get_language_info(self.target_language)
+        # TranslateGemma 格式：单个用户消息，提示词 + 两个空行 + 文本
+        text_to_translate = "\n".join(subtitle_chunk.values())
+        user_content = Template(TRANSLATE_PROMPT).safe_substitute(
+            source_lang=source_lang,
+            source_code=source_code,
+            target_lang=target_lang,
+            target_code=target_code,
+        ) + text_to_translate
+        system_prompt = None
+
+        prompt_hash = hashlib.md5((system_prompt or user_content).encode()).hexdigest()
 
         try:
             # 检查缓存
             cache_params = {
                 "target_language": self.target_language,
-                "is_reflect": self.is_reflect,
+                "source_language": self.source_language,
                 "temperature": self.temperature,
                 "prompt_hash": prompt_hash,
             }
@@ -257,15 +282,15 @@ class OpenAITranslator(BaseTranslator):
                 result = json.loads(cache_result)
             else:
                 # 调用API翻译
-                response = self._call_api(
-                    prompt, json.dumps(subtitle_chunk, ensure_ascii=False)
-                )
-                # 解析结果
-                result = json_repair.loads(response.choices[0].message.content)
-                # 检查翻译结果数量是否匹配
-                if len(result) != len(subtitle_chunk):
-                    logger.warning(f"翻译结果数量不匹配，将使用单条翻译模式重试")
+                response = self._call_api(system_prompt, user_content)
+                # 按换行分割响应文本
+                lines = response.choices[0].message.content.strip().split("\n")
+                # 重建字典，保持与输入的对应关系
+                keys = list(subtitle_chunk.keys())
+                if len(lines) != len(keys):
+                    logger.warning(f"翻译结果数量不匹配({len(lines)} vs {len(keys)})，将使用单条翻译模式重试")
                     return self._translate_chunk_single(subtitle_chunk)
+                result = {keys[i]: lines[i] for i in range(len(keys))}
                 # 保存到缓存
                 self.cache_manager.set_llm_result(
                     cache_key,
@@ -274,10 +299,7 @@ class OpenAITranslator(BaseTranslator):
                     **cache_params,
                 )
 
-            if self.is_reflect:
-                result = {k: f"{v['revised_translation']}" for k, v in result.items()}
-            else:
-                result = {k: f"{v}" for k, v in result.items()}
+            result = {k: f"{v}" for k, v in result.items()}
 
             return result
         except Exception as e:
@@ -299,7 +321,6 @@ class OpenAITranslator(BaseTranslator):
                 # 检查缓存
                 cache_params = {
                     "target_language": self.target_language,
-                    "is_reflect": self.is_reflect,
                     "temperature": self.temperature,
                     "prompt_hash": prompt_hash,
                 }
@@ -316,7 +337,7 @@ class OpenAITranslator(BaseTranslator):
 
                 # 删除 DeepSeek-R1 等推理模型的思考过程 #300
                 translated_text = re.sub(
-                    r"<think>.*?</think>", "", translated_text, flags=re.DOTALL
+                    r"<!think>.*?<!/think>", "", translated_text, flags=re.DOTALL
                 )
                 translated_text = translated_text.strip()
 
@@ -336,12 +357,16 @@ class OpenAITranslator(BaseTranslator):
         return result
 
     @with_openai_retry(max_retries=20, delay_increment=0.5)
-    def _call_api(self, prompt: str, user_content: Dict[str, str]) -> Any:
+    def _call_api(self, system_prompt: Optional[str], user_content: str) -> Any:
         """调用OpenAI API"""
-        messages = [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_content},
-        ]
+        if system_prompt:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ]
+        else:
+            # TranslateGemma 格式：只有用户消息
+            messages = [{"role": "user", "content": user_content}]
 
         return self.client.chat.completions.create(
             model=self.model,
@@ -349,343 +374,6 @@ class OpenAITranslator(BaseTranslator):
             temperature=self.temperature,
             timeout=self.timeout,
         )
-
-    def _parse_response(self, response: Any) -> Dict[str, str]:
-        """解析API响应"""
-        try:
-            result = json_repair.loads(response.choices[0].message.content)
-            if self.is_reflect:
-                return {k: v["revised_translation"] for k, v in result.items()}
-            return result
-        except Exception as e:
-            raise ValueError(f"解析翻译结果失败：{str(e)}")
-
-
-class GoogleTranslator(BaseTranslator):
-    """谷歌翻译器"""
-
-    def __init__(
-        self,
-        thread_num: int = 10,
-        batch_num: int = 20,
-        target_language: str = "Chinese",
-        retry_times: int = 1,
-        timeout: int = 20,
-        update_callback: Optional[Callable] = None,
-    ):
-        super().__init__(
-            thread_num=thread_num,
-            batch_num=batch_num,
-            target_language=target_language,
-            retry_times=retry_times,
-            timeout=timeout,
-            update_callback=update_callback,
-        )
-        self.session = requests.Session()
-        self.endpoint = "http://translate.google.com/m"
-        self.headers = {
-            "User-Agent": "Mozilla/4.0 (compatible;MSIE 6.0;Windows NT 5.1;SV1;.NET CLR 1.1.4322;.NET CLR 2.0.50727;.NET CLR 3.0.04506.30)"
-        }
-        self.lang_map = {
-            "简体中文": "zh-CN",
-            "繁体中文": "zh-TW",
-            "英语": "en",
-            "日本語": "ja",
-            "韩语": "ko",
-            "粤语": "yue",
-            "法语": "fr",
-            "德语": "de",
-            "西班牙语": "es",
-            "俄语": "ru",
-            "葡萄牙语": "pt",
-            "土耳其语": "tr",
-        }
-
-    def _translate_chunk(self, subtitle_chunk: Dict[str, str]) -> Dict[str, str]:
-        """翻译字幕块"""
-        result = {}
-        if self.target_language in self.lang_map.values():
-            target_lang = self.target_language
-        else:
-            target_lang = self.lang_map.get(self.target_language, "zh-CN")
-
-        for idx, text in subtitle_chunk.items():
-            try:
-                # 检查缓存
-                cache_params = {"target_language": target_lang}
-                cache_result = self.cache_manager.get_translation(
-                    text, TranslatorType.GOOGLE.value, **cache_params
-                )
-
-                if cache_result:
-                    result[idx] = cache_result
-                    logger.info(f"使用缓存的Google翻译结果：{idx}")
-                    continue
-
-                text = text[:5000]  # google translate max length
-                response = self.session.get(
-                    self.endpoint,
-                    params={"tl": target_lang, "sl": "auto", "q": text},
-                    headers=self.headers,
-                    timeout=self.timeout,
-                )
-
-                if response.status_code == 400:
-                    result[idx] = "TRANSLATION ERROR"
-                    continue
-
-                response.raise_for_status()
-                re_result = re.findall(
-                    r'(?s)class="(?:t0|result-container)">(.*?)<', response.text
-                )
-                if re_result:
-                    translated_text = html.unescape(re_result[0])
-                    # 保存到缓存
-                    self.cache_manager.set_translation(
-                        text,
-                        translated_text,
-                        TranslatorType.GOOGLE.value,
-                        **cache_params,
-                    )
-                    result[idx] = translated_text
-                else:
-                    result[idx] = "ERROR"
-                    logger.warning(f"无法从Google翻译响应中提取翻译结果: {idx}")
-            except Exception as e:
-                logger.error(f"Google翻译失败 {idx}: {str(e)}")
-                result[idx] = "ERROR"
-        return result
-
-
-class BingTranslator(BaseTranslator):
-    """必应翻译器"""
-
-    def __init__(
-        self,
-        thread_num: int = 10,
-        batch_num: int = 20,
-        target_language: str = "Chinese",
-        retry_times: int = 1,
-        timeout: int = 20,
-        update_callback: Optional[Callable] = None,
-    ):
-        super().__init__(
-            thread_num=thread_num,
-            batch_num=batch_num,
-            target_language=target_language,
-            retry_times=retry_times,
-            timeout=timeout,
-            update_callback=update_callback,
-        )
-        self.session = requests.Session()
-        self.auth_endpoint = "https://edge.microsoft.com/translate/auth"
-        self.translate_endpoint = (
-            "https://api-edge.cognitive.microsofttranslator.com/translate"
-        )
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
-        }
-        self.lang_map = {
-            "简体中文": "zh-Hans",
-            "繁体中文": "zh-Hant",
-            "英语": "en",
-            "日本語": "ja",
-            "韩语": "ko",
-            "粤语": "yue",
-            "法语": "fr",
-            "德语": "de",
-            "西班牙语": "es",
-            "俄语": "ru",
-            "葡萄牙语": "pt",
-            "土耳其语": "tr",
-            "Chinese": "zh-Hans",
-            "English": "en",
-            "Japanese": "ja",
-            "Korean": "ko",
-            "French": "fr",
-            "German": "de",
-            "Russian": "ru",
-            "Spanish": "es",
-        }
-        self._init_session()
-
-    def _init_session(self):
-        """初始化会话，获取必要的token"""
-        try:
-            response = self.session.get(self.auth_endpoint, timeout=self.timeout)
-            response.raise_for_status()
-            self.auth_token = response.text
-            self.headers["authorization"] = f"Bearer {self.auth_token}"
-        except Exception as e:
-            logger.error(f"初始化必应翻译会话失败: {str(e)}")
-            raise RuntimeError(f"初始化必应翻译会话失败: {str(e)}")
-
-    def _translate_chunk(self, subtitle_chunk: Dict[str, str]) -> Dict[str, str]:
-        """翻译字幕块"""
-        result = {}
-        if self.target_language in self.lang_map.values():
-            target_lang = self.target_language
-        else:
-            target_lang = self.lang_map.get(self.target_language, "zh-Hans")
-
-        # 准备批量翻译的数据
-        texts_to_translate = []
-        idx_map = []
-
-        for idx, text in subtitle_chunk.items():
-            # 检查缓存
-            cache_params = {"target_language": target_lang}
-            cache_result = self.cache_manager.get_translation(
-                text, TranslatorType.BING.value, **cache_params
-            )
-
-            if cache_result:
-                result[idx] = cache_result
-                logger.debug(f"使用缓存的Bing翻译结果：{idx}")
-            else:
-                texts_to_translate.append({"Text": text[:5000]})  # 限制文本长度
-                idx_map.append(idx)
-
-        if texts_to_translate:
-            try:
-                params = {
-                    "to": target_lang,
-                    "api-version": "3.0",
-                    "includeSentenceLength": "true",
-                }
-
-                response = self.session.post(
-                    self.translate_endpoint,
-                    params=params,
-                    headers=self.headers,
-                    json=texts_to_translate,
-                    timeout=self.timeout,
-                )
-                response.raise_for_status()
-                translations = response.json()
-
-                # 处理翻译结果
-                for i, translation in enumerate(translations):
-                    idx = idx_map[i]
-                    translated_text = translation["translations"][0]["text"]
-
-                    # 保存到缓存
-                    original_text = texts_to_translate[i]["Text"]
-                    self.cache_manager.set_translation(
-                        original_text,
-                        translated_text,
-                        TranslatorType.BING.value,
-                        **{"target_language": target_lang},
-                    )
-
-                    result[idx] = translated_text
-
-            except Exception as e:
-                logger.error(f"必应翻译失败: {str(e)}")
-                # 如果是token过期，尝试重新初始化会话
-                if "token" in str(e).lower() or response.status_code in [401, 403]:
-                    try:
-                        self._init_session()
-                    except Exception as e:
-                        logger.error(f"重新初始化必应翻译会话失败: {str(e)}")
-                # 对于失败的翻译，标记为错误
-                for idx in idx_map:
-                    if idx not in result:
-                        result[idx] = "ERROR"
-
-        return result
-
-
-class DeepLXTranslator(BaseTranslator):
-    """DeepLX翻译器"""
-
-    def __init__(
-        self,
-        thread_num: int = 10,
-        batch_num: int = 20,
-        target_language: str = "Chinese",
-        retry_times: int = 1,
-        timeout: int = 20,
-        update_callback: Optional[Callable] = None,
-    ):
-        super().__init__(
-            thread_num=thread_num,
-            batch_num=batch_num,
-            target_language=target_language,
-            retry_times=retry_times,
-            timeout=timeout,
-            update_callback=update_callback,
-        )
-        self.session = requests.Session()
-        self.endpoint = os.getenv("DEEPLX_ENDPOINT", "https://api.deeplx.org/translate")
-        self.lang_map = {
-            "简体中文": "zh",
-            "繁体中文": "zh-TW",
-            "英语": "en",
-            "日本語": "ja",
-            "韩语": "ko",
-            "法语": "fr",
-            "德语": "de",
-            "西班牙语": "es",
-            "俄语": "ru",
-            "葡萄牙语": "pt",
-            "土耳其语": "tr",
-            "Chinese": "zh",
-            "English": "en",
-            "Japanese": "ja",
-            "Korean": "ko",
-            "French": "fr",
-            "German": "de",
-            "Spanish": "es",
-            "Russian": "ru",
-        }
-
-    def _translate_chunk(self, subtitle_chunk: Dict[str, str]) -> Dict[str, str]:
-        """翻译字幕块"""
-        result = {}
-        if self.target_language in self.lang_map.values():
-            target_lang = self.target_language
-        else:
-            target_lang = self.lang_map.get(self.target_language, "zh").lower()
-
-        for idx, text in subtitle_chunk.items():
-            try:
-                # 检查缓存
-                cache_params = {
-                    "target_language": target_lang,
-                    "endpoint": self.endpoint,
-                }
-                cache_result = self.cache_manager.get_translation(
-                    text, TranslatorType.DEEPLX.value, **cache_params
-                )
-
-                if cache_result:
-                    result[idx] = cache_result
-                    logger.info(f"使用缓存的DeepLX翻译结果：{idx}")
-                    continue
-
-                response = self.session.post(
-                    self.endpoint,
-                    json={
-                        "text": text,
-                        "source_lang": "auto",
-                        "target_lang": target_lang,
-                    },
-                    timeout=self.timeout,
-                )
-                response.raise_for_status()
-                translated_text = response.json()["data"]
-
-                # 保存到缓存
-                self.cache_manager.set_translation(
-                    text, translated_text, TranslatorType.DEEPLX.value, **cache_params
-                )
-
-                result[idx] = translated_text
-            except Exception as e:
-                logger.error(f"DeepLX翻译失败 {idx}: {str(e)}")
-                result[idx] = "ERROR"
-        return result
 
 
 class TranslatorFactory:
@@ -697,10 +385,10 @@ class TranslatorFactory:
         thread_num: int = 5,
         batch_num: int = 10,
         target_language: str = "Chinese",
+        source_language: str = "English",
         model: str = "gpt-4o-mini",
         custom_prompt: str = "",
         temperature: float = 0.7,
-        is_reflect: bool = False,
         update_callback: Optional[Callable] = None,
     ) -> BaseTranslator:
         """创建翻译器实例"""
@@ -710,34 +398,10 @@ class TranslatorFactory:
                     thread_num=thread_num,
                     batch_num=batch_num,
                     target_language=target_language,
+                    source_language=source_language,
                     model=model,
                     custom_prompt=custom_prompt,
-                    is_reflect=is_reflect,
                     temperature=temperature,
-                    update_callback=update_callback,
-                )
-            elif translator_type == TranslatorType.GOOGLE:
-                batch_num = 5
-                return GoogleTranslator(
-                    thread_num=thread_num,
-                    batch_num=batch_num,
-                    target_language=target_language,
-                    update_callback=update_callback,
-                )
-            elif translator_type == TranslatorType.BING:
-                batch_num = 10
-                return BingTranslator(
-                    thread_num=thread_num,
-                    batch_num=batch_num,
-                    target_language=target_language,
-                    update_callback=update_callback,
-                )
-            elif translator_type == TranslatorType.DEEPLX:
-                batch_num = 5
-                return DeepLXTranslator(
-                    thread_num=thread_num,
-                    batch_num=batch_num,
-                    target_language=target_language,
                     update_callback=update_callback,
                 )
             else:

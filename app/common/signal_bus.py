@@ -12,10 +12,6 @@ class SignalBus(QObject):
     target_language_changed = pyqtSignal(str)
     # 转录模型
     transcription_model_changed = pyqtSignal(str)
-    # 软字幕信号
-    soft_subtitle_changed = pyqtSignal(bool)
-    # 视频合成信号
-    need_video_changed = pyqtSignal(bool)
 
     # 新增视频控制相关信号
     video_play = pyqtSignal()  # 播放信号

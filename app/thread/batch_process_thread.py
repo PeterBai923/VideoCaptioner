@@ -1,30 +1,23 @@
-from re import S
-from typing import List, Dict, Optional
+from typing import Dict, Optional
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from pathlib import Path
 import queue
 import time
 from functools import partial
 
-
 from app.common.config import cfg
 from app.core.entities import (
     BatchTaskStatus,
     BatchTaskType,
     TranscribeTask,
-)
-from app.core.task_factory import TaskFactory
-from app.core.entities import (
-    TranscribeTask,
     SubtitleTask,
     TranscriptAndSubtitleTask,
     FullProcessTask,
 )
+from app.core.task_factory import TaskFactory
 from app.thread.transcript_thread import TranscriptThread
 from app.thread.subtitle_thread import SubtitleThread
-from app.thread.video_synthesis_thread import VideoSynthesisThread
 from app.core.utils.logger import setup_logger
-from app.core.entities import BatchTaskType, BatchTaskStatus
 
 logger = setup_logger("batch_process_thread")
 
@@ -183,7 +176,6 @@ class BatchProcessThread(QThread):
         thread.start()
 
     def _handle_trans_sub_task(self, batch_task: BatchTask):
-        task = self.factory.create_transcript_and_subtitle_task(batch_task.file_path)
         trans_task = self.factory.create_transcribe_task(
             batch_task.file_path, need_next_task=True
         )
@@ -233,8 +225,6 @@ class BatchProcessThread(QThread):
         # 保存线程引用
         self.threads.append(thread)
 
-        from functools import partial
-
         thread.progress.connect(
             partial(self._on_trans_sub_subtitle_progress_wrapper, batch_task),
             Qt.QueuedConnection,
@@ -256,7 +246,6 @@ class BatchProcessThread(QThread):
         self.task_progress.emit(batch_task.file_path, progress, message)
 
     def _handle_full_process_task(self, batch_task: BatchTask):
-        task = self.factory.create_full_process_task(batch_task.file_path)
         # 首先创建转录任务
         trans_task = self.factory.create_transcribe_task(
             batch_task.file_path, need_next_task=True
@@ -323,44 +312,27 @@ class BatchProcessThread(QThread):
     ):
         """处理全流程任务中字幕部分的进度"""
         if batch_task.status == BatchTaskStatus.RUNNING:
-            progress_value = 33 + progress // 3  # 字幕处理占中间33%进度
+            progress_value = 33 + progress * 2 // 3  # 字幕处理占后67%进度
             self.task_progress.emit(batch_task.file_path, progress_value, message)
 
     def on_full_process_subtitle_finished(
-        self, batch_task: BatchTask, video_path: str, subtitle_path: str
+        self, batch_task: BatchTask, video_path: str, output_path: str
     ):
-        """处理字幕完成后开始视频合成任务"""
+        """处理字幕完成后，全流程任务结束
+
+        Args:
+            batch_task: 批量任务对象
+            video_path: 视频文件路径（未使用）
+            output_path: 输出字幕文件路径（未使用）
+        """
+        _ = video_path, output_path  # 标记为未使用
         if batch_task.current_thread in self.threads:
             self.threads.remove(batch_task.current_thread)
 
-        # 字幕完成后创建视频合成任务
-        synthesis_task = self.factory.create_synthesis_task(video_path, subtitle_path)
-        thread = VideoSynthesisThread(synthesis_task)
-        batch_task.current_thread = thread
-
-        # 保存线程引用
-        self.threads.append(thread)
-
-        thread.progress.connect(
-            partial(self.on_full_process_synthesis_progress, batch_task),
-            Qt.QueuedConnection,
-        )
-        thread.error.connect(
-            partial(self._on_error_wrapper, batch_task), Qt.QueuedConnection
-        )
-        thread.finished.connect(
-            partial(self._on_finished_wrapper, batch_task), Qt.QueuedConnection
-        )
-
-        thread.start()
-
-    def on_full_process_synthesis_progress(
-        self, batch_task: BatchTask, progress: int, message: str
-    ):
-        """处理全流程任务中视频合成部分的进度"""
-        if batch_task.status == BatchTaskStatus.RUNNING:
-            progress_value = 66 + progress // 3  # 视频合成占最后34%进度
-            self.task_progress.emit(batch_task.file_path, progress_value, message)
+        # 字幕完成后，任务结束
+        batch_task.status = BatchTaskStatus.COMPLETED
+        batch_task.progress = 100
+        self.task_completed.emit(batch_task.file_path)
 
     def stop_task(self, file_path: str):
         if file_path in self.current_tasks:

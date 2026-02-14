@@ -125,14 +125,10 @@ class Config(QConfig):
     translator_service = OptionsConfigItem(
         "Translate",
         "TranslatorServiceEnum",
-        TranslatorServiceEnum.BING,
+        TranslatorServiceEnum.OPENAI,
         OptionsValidator(TranslatorServiceEnum),
         EnumSerializer(TranslatorServiceEnum),
     )
-    need_reflect_translate = ConfigItem(
-        "Translate", "NeedReflectTranslate", False, BoolValidator()
-    )
-    deeplx_endpoint = ConfigItem("Translate", "DeeplxEndpoint", "")
     batch_size = RangeConfigItem("Translate", "BatchSize", 10, RangeValidator(5, 100))
     thread_num = RangeConfigItem("Translate", "ThreadNum", 10, RangeValidator(1, 100))
 
@@ -242,10 +238,6 @@ class Config(QConfig):
         "Subtitle", "NeedsRemovePunctuation", True, BoolValidator()
     )
     custom_prompt_text = ConfigItem("Subtitle", "CustomPromptText", "")
-
-    # ------------------- 字幕合成配置 -------------------
-    soft_subtitle = ConfigItem("Video", "SoftSubtitle", False, BoolValidator())
-    need_video = ConfigItem("Video", "NeedVideo", True, BoolValidator())
 
     # ------------------- 字幕样式配置 -------------------
     subtitle_style_name = ConfigItem("SubtitleStyle", "StyleName", "default")

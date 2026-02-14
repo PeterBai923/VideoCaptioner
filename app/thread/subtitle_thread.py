@@ -7,7 +7,7 @@ from PyQt5.QtCore import QSettings, QThread, pyqtSignal
 
 from app.common.config import cfg
 from app.core.bk_asr.asr_data import ASRData
-from app.core.entities import SubtitleConfig, SubtitleTask, TranslatorServiceEnum
+from app.core.entities import SubtitleConfig, SubtitleTask
 from app.core.subtitle_processor.split import SubtitleSplitter
 from app.core.subtitle_processor.summarization import SubtitleSummarizer
 from app.core.subtitle_processor.optimize import SubtitleOptimizer
@@ -101,17 +101,7 @@ class SubtitleThread(QThread):
             if (
                 subtitle_config.need_optimize
                 or asr_data.is_word_timestamp()
-                or (
-                    (
-                        subtitle_config.need_translate
-                        and subtitle_config.translator_service
-                        not in [
-                            TranslatorServiceEnum.DEEPLX,
-                            TranslatorServiceEnum.BING,
-                            TranslatorServiceEnum.GOOGLE,
-                        ]
-                    )
-                )
+                or subtitle_config.need_translate
             ):
                 subtitle_config = self._setup_api_config()
                 os.environ["OPENAI_BASE_URL"] = subtitle_config.base_url
@@ -154,25 +144,18 @@ class SubtitleThread(QThread):
                 self.update_all.emit(asr_data.to_json())
 
             # 4. 翻译字幕
-            translator_map = {
-                TranslatorServiceEnum.OPENAI: TranslatorType.OPENAI,
-                TranslatorServiceEnum.DEEPLX: TranslatorType.DEEPLX,
-                TranslatorServiceEnum.BING: TranslatorType.BING,
-                TranslatorServiceEnum.GOOGLE: TranslatorType.GOOGLE,
-            }
             if subtitle_config.need_translate:
                 self.progress.emit(0, self.tr("翻译字幕..."))
                 logger.info("正在翻译字幕...")
                 self.finished_subtitle_length = 0  # 重置计数器
-                os.environ["DEEPLX_ENDPOINT"] = subtitle_config.deeplx_endpoint
                 translator = TranslatorFactory.create_translator(
-                    translator_type=translator_map[subtitle_config.translator_service],
+                    translator_type=TranslatorType.OPENAI,
                     thread_num=subtitle_config.thread_num,
                     batch_num=subtitle_config.batch_size,
                     target_language=subtitle_config.target_language,
+                    source_language=subtitle_config.source_language,
                     model=subtitle_config.llm_model,
                     custom_prompt=custom_prompt,
-                    is_reflect=subtitle_config.need_reflect,
                     update_callback=self.callback,
                 )
                 asr_data = translator.translate_subtitle(asr_data)

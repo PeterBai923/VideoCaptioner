@@ -11,8 +11,6 @@ from app.core.entities import (
     SplitTypeEnum,
     SubtitleConfig,
     SubtitleTask,
-    SynthesisConfig,
-    SynthesisTask,
     TranscribeConfig,
     TranscribeTask,
     TranscriptAndSubtitleTask,
@@ -167,12 +165,10 @@ class TaskFactory:
             base_url=base_url,
             api_key=api_key,
             llm_model=llm_model,
-            deeplx_endpoint=cfg.deeplx_endpoint.value,
             # 翻译服务
             translator_service=cfg.translator_service.value,
             # 字幕处理
             split_type=split_type,
-            need_reflect=cfg.need_reflect_translate.value,
             need_translate=cfg.need_translate.value,
             need_optimize=cfg.need_optimize.value,
             thread_num=cfg.thread_num.value,
@@ -188,6 +184,7 @@ class TaskFactory:
             need_split=cfg.need_split.value,
             # 字幕翻译
             target_language=cfg.target_language.value.value,
+            source_language=LANGUAGES.get(cfg.transcribe_language.value.value, "English"),
             # 字幕优化
             need_remove_punctuation=cfg.needs_remove_punctuation.value,
             # 字幕提示
@@ -200,34 +197,6 @@ class TaskFactory:
             video_path=video_path,
             output_path=output_path,
             subtitle_config=config,
-            need_next_task=need_next_task,
-        )
-
-    @staticmethod
-    def create_synthesis_task(
-        video_path: str, subtitle_path: str, need_next_task: bool = False
-    ) -> SynthesisTask:
-        """创建视频合成任务"""
-        if need_next_task:
-            output_path = str(
-                Path(video_path).parent / f"【卡卡】{Path(video_path).stem}.mp4"
-            )
-        else:
-            output_path = str(
-                Path(video_path).parent / f"【卡卡】{Path(video_path).stem}.mp4"
-            )
-
-        config = SynthesisConfig(
-            need_video=cfg.need_video.value,
-            soft_subtitle=cfg.soft_subtitle.value,
-        )
-
-        return SynthesisTask(
-            queued_at=datetime.datetime.now(),
-            video_path=video_path,
-            subtitle_path=subtitle_path,
-            output_path=output_path,
-            synthesis_config=config,
             need_next_task=need_next_task,
         )
 
@@ -256,9 +225,8 @@ class TaskFactory:
         output_path: Optional[str] = None,
         transcribe_config: Optional[TranscribeConfig] = None,
         subtitle_config: Optional[SubtitleConfig] = None,
-        synthesis_config: Optional[SynthesisConfig] = None,
     ) -> FullProcessTask:
-        """创建完整处理任务（转录+字幕+合成）"""
+        """创建完整处理任务（转录+字幕）"""
         if output_path is None:
             output_path = str(
                 Path(file_path).parent
@@ -269,4 +237,6 @@ class TaskFactory:
             queued_at=datetime.datetime.now(),
             file_path=file_path,
             output_path=output_path,
+            transcribe_config=transcribe_config,
+            subtitle_config=subtitle_config,
         )

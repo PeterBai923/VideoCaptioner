@@ -361,7 +361,7 @@ def translation_page():
                     logger.info(f"目标语言: {target_language}")
                     # 创建优化器实例（用于翻译）
                     translator = TranslatorFactory.create_translator(
-                        translator_type=TranslatorType.BING,
+                        translator_type=TranslatorType.OPENAI,
                         target_language=target_language,
                     )
 
