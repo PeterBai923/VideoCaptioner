@@ -427,10 +427,20 @@ class SettingInterface(ScrollArea):
             parent=self.translate_serviceGroup,
         )
 
+        # 单条翻译模式
+        self.singleTranslateModeCard = SwitchSettingCard(
+            FIF.SYNC,
+            self.tr("单条翻译模式"),
+            self.tr("逐条翻译字幕，适合翻译结果不稳定的场景"),
+            cfg.single_translate_mode,
+            self.translate_serviceGroup,
+        )
+
         # 添加卡片到翻译服务组
         self.translate_serviceGroup.addSettingCard(self.translatorServiceCard)
         self.translate_serviceGroup.addSettingCard(self.batchSizeCard)
         self.translate_serviceGroup.addSettingCard(self.threadNumCard)
+        self.translate_serviceGroup.addSettingCard(self.singleTranslateModeCard)
 
     def __initWidget(self):
         self.resize(1000, 800)

@@ -131,6 +131,9 @@ class Config(QConfig):
     )
     batch_size = RangeConfigItem("Translate", "BatchSize", 10, RangeValidator(5, 100))
     thread_num = RangeConfigItem("Translate", "ThreadNum", 10, RangeValidator(1, 100))
+    single_translate_mode = ConfigItem(
+        "Translate", "SingleTranslateMode", False, BoolValidator()
+    )
 
     # ------------------- 转录配置 -------------------
     transcribe_model = OptionsConfigItem(

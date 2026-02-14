@@ -64,6 +64,7 @@ class BaseTranslator(ABC):
         timeout: int = 60,
         update_callback: Optional[Callable] = None,
         custom_prompt: Optional[str] = None,
+        single_mode: bool = False,
     ):
         self.thread_num = thread_num
         self.batch_num = batch_num
@@ -74,6 +75,7 @@ class BaseTranslator(ABC):
         self.is_running = True
         self.update_callback = update_callback
         self.custom_prompt = custom_prompt
+        self.single_mode = single_mode
         self._init_thread_pool()
         self.cache_manager = CacheManager(CACHE_PATH)
 
@@ -206,6 +208,7 @@ class OpenAITranslator(BaseTranslator):
         timeout: int = 60,
         retry_times: int = 1,
         update_callback: Optional[Callable] = None,
+        single_mode: bool = False,
     ):
         super().__init__(
             thread_num=thread_num,
@@ -215,6 +218,7 @@ class OpenAITranslator(BaseTranslator):
             retry_times=retry_times,
             timeout=timeout,
             update_callback=update_callback,
+            single_mode=single_mode,
         )
 
         self._init_client()
@@ -240,6 +244,8 @@ class OpenAITranslator(BaseTranslator):
 
     def _translate_chunk(self, subtitle_chunk: Dict[str, str]) -> Dict[str, str]:
         """翻译字幕块"""
+        if self.single_mode:
+            return self._translate_chunk_single(subtitle_chunk)
         return self._translate_chunk_standard(subtitle_chunk)
 
     def _translate_chunk_standard(self, subtitle_chunk: Dict[str, str]) -> Dict[str, str]:
@@ -312,8 +318,13 @@ class OpenAITranslator(BaseTranslator):
     def _translate_chunk_single(self, subtitle_chunk: Dict[str, str]) -> Dict[str, str]:
         """单条翻译模式"""
         result = {}
+        source_lang, source_code = self._get_language_info(self.source_language)
+        target_lang, target_code = self._get_language_info(self.target_language)
         single_prompt = Template(SINGLE_TRANSLATE_PROMPT).safe_substitute(
-            target_language=self.target_language
+            source_lang=source_lang,
+            source_code=source_code,
+            target_lang=target_lang,
+            target_code=target_code,
         )
         prompt_hash = hashlib.md5(single_prompt.encode()).hexdigest()
         for idx, text in subtitle_chunk.items():
@@ -321,6 +332,7 @@ class OpenAITranslator(BaseTranslator):
                 # 检查缓存
                 cache_params = {
                     "target_language": self.target_language,
+                    "source_language": self.source_language,
                     "temperature": self.temperature,
                     "prompt_hash": prompt_hash,
                 }
@@ -390,6 +402,7 @@ class TranslatorFactory:
         custom_prompt: str = "",
         temperature: float = 0.7,
         update_callback: Optional[Callable] = None,
+        single_mode: bool = False,
     ) -> BaseTranslator:
         """创建翻译器实例"""
         try:
@@ -403,6 +416,7 @@ class TranslatorFactory:
                     custom_prompt=custom_prompt,
                     temperature=temperature,
                     update_callback=update_callback,
+                    single_mode=single_mode,
                 )
             else:
                 raise ValueError(f"不支持的翻译器类型：{translator_type}")

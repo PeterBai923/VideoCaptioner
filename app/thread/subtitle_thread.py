@@ -157,6 +157,7 @@ class SubtitleThread(QThread):
                     model=subtitle_config.llm_model,
                     custom_prompt=custom_prompt,
                     update_callback=self.callback,
+                    single_mode=subtitle_config.single_translate_mode,
                 )
                 asr_data = translator.translate_subtitle(asr_data)
                 # 移除末尾标点符号

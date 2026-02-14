@@ -173,6 +173,7 @@ class TaskFactory:
             need_optimize=cfg.need_optimize.value,
             thread_num=cfg.thread_num.value,
             batch_size=cfg.batch_size.value,
+            single_translate_mode=cfg.single_translate_mode.value,
             # 字幕布局、样式
             subtitle_layout=cfg.subtitle_layout.value,
             subtitle_style=TaskFactory.get_subtitle_style(

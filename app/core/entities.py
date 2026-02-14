@@ -536,6 +536,7 @@ class SubtitleConfig:
     need_optimize: bool = False
     thread_num: int = 10
     batch_size: int = 10
+    single_translate_mode: bool = False
     # 字幕布局和分割
     split_type: Optional[SplitTypeEnum] = None
     subtitle_layout: Optional[str] = None
