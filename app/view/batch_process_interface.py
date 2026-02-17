@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QDesktopServices, QColor, QFont
 from PyQt5.QtCore import QUrl
+from typing import Set, List
 from qfluentwidgets import (
     ComboBox,
     PushButton,
@@ -24,23 +25,50 @@ from qfluentwidgets import (
     RoundMenu,
     Action,
     FluentIcon as FIF,
+    MessageBox,
+    StateToolTip,
 )
 import os
 import json
+from pathlib import Path
 
 from app.common.config import cfg
 from app.config import WORK_PATH
 from app.thread.batch_process_thread import (
     BatchProcessThread,
     BatchTask,
-    BatchTaskStatus,
 )
 from app.core.entities import (
+    BatchTaskType,
+    BatchTaskStatus,
     SupportedAudioFormats,
     SupportedVideoFormats,
     SupportedSubtitleFormats,
 )
-from app.core.entities import BatchTaskType, BatchTaskStatus
+from app.core.utils.file_utils import get_supported_extensions, scan_folder_recursively
+
+
+class FolderScanThread(QThread):
+    """后台文件夹扫描线程，支持中断"""
+
+    scan_completed = pyqtSignal(list)
+    progress_updated = pyqtSignal(int)
+
+    def __init__(self, folder_path: str, extensions: Set[str], parent=None):
+        super().__init__(parent)
+        self.folder_path = folder_path
+        self.extensions = extensions
+
+    def run(self):
+        """执行扫描，支持被中断"""
+        files = scan_folder_recursively(
+            self.folder_path,
+            self.extensions,
+            is_interrupted=lambda: self.isInterruptionRequested(),
+            progress_callback=lambda c: self.progress_updated.emit(c)
+        )
+        if not self.isInterruptionRequested():
+            self.scan_completed.emit(files)
 
 
 BATCH_TASK_STATE_FILE = WORK_PATH / "batch_tasks.json"
@@ -53,6 +81,8 @@ class BatchProcessInterface(QWidget):
         self.setWindowTitle(self.tr("批量处理"))
         self.setAcceptDrops(True)
         self.batch_thread = BatchProcessThread()
+        self.scan_thread = None
+        self.scan_tooltip = None
 
         self.init_ui()
         self.setup_connections()
@@ -140,6 +170,22 @@ class BatchProcessInterface(QWidget):
         self.task_table.customContextMenuRequested.connect(self.show_context_menu)
 
     def on_add_file_clicked(self):
+        """点击添加文件按钮，弹出选择对话框"""
+        # 创建选择对话框
+        msg_box = MessageBox("选择添加方式", "请选择要添加的内容：", self)
+        msg_box.yesButton.setText("添加文件")
+        msg_box.cancelButton.setText("添加文件夹")
+
+        # 根据用户选择执行不同操作
+        if msg_box.exec():
+            # 点击了"添加文件"按钮
+            self._select_files()
+        else:
+            # 点击了"添加文件夹"按钮
+            self.on_add_folder_clicked()
+
+    def _select_files(self):
+        """选择并添加文件"""
         task_type = self.task_type_combo.currentText()
         file_filter = ""
         if task_type in [
@@ -161,6 +207,99 @@ class BatchProcessInterface(QWidget):
         if files:
             self.add_files(files)
 
+    def on_add_folder_clicked(self):
+        """弹出目录选择对话框"""
+        folder = QFileDialog.getExistingDirectory(self, "选择文件夹", "")
+        if folder:
+            self.scan_and_add_folder(folder)
+
+    def scan_and_add_folder(self, folder_path: str):
+        """在后台线程扫描文件夹并添加文件"""
+        # 清理旧的扫描线程
+        if self.scan_thread is not None:
+            if self.scan_thread.isRunning():
+                InfoBar.warning(
+                    title="正在扫描",
+                    content="请等待当前扫描任务完成",
+                    duration=2000,
+                    position=InfoBarPosition.TOP,
+                    parent=self,
+                )
+                return
+            try:
+                self.scan_thread.scan_completed.disconnect()
+            except TypeError:
+                pass
+
+        # 获取当前任务类型对应的扩展名
+        task_type = BatchTaskType(self.task_type_combo.currentText())
+        extensions = get_supported_extensions(task_type)
+
+        if not extensions:
+            InfoBar.warning(
+                title="无效任务类型",
+                content="当前任务类型不支持任何文件格式",
+                duration=2000,
+                position=InfoBarPosition.TOP,
+                parent=self,
+            )
+            return
+
+        # 显示扫描提示
+        self.scan_tooltip = StateToolTip("正在扫描文件夹", "请稍候...", self)
+        self.scan_tooltip.move(self.width() // 2 - self.scan_tooltip.width() // 2, 100)
+        self.scan_tooltip.show()
+
+        # 创建并启动扫描线程
+        self.scan_thread = FolderScanThread(folder_path, extensions)
+        self.scan_thread.scan_completed.connect(self._on_folder_scan_completed)
+        self.scan_thread.progress_updated.connect(self._on_scan_progress)
+        self.scan_thread.start()
+
+    def _on_scan_progress(self, count: int):
+        """扫描进度更新回调"""
+        if self.scan_tooltip:
+            self.scan_tooltip.setContent(f"已扫描 {count} 个文件...")
+
+    def _on_folder_scan_completed(self, files: list):
+        """扫描完成回调"""
+        # 关闭扫描提示
+        if self.scan_tooltip:
+            self.scan_tooltip.setContent("扫描完成")
+            self.scan_tooltip.setState(True)
+            self.scan_tooltip.close()
+            self.scan_tooltip = None
+
+        # 清理扫描线程信号连接
+        if self.scan_thread:
+            try:
+                self.scan_thread.scan_completed.disconnect()
+            except TypeError:
+                pass
+            self.scan_thread = None
+
+        if not files:
+            InfoBar.warning(
+                title="未找到文件",
+                content="所选文件夹中没有找到支持的文件",
+                duration=3000,
+                position=InfoBarPosition.TOP,
+                parent=self,
+            )
+            return
+
+        # 显示找到的文件数量
+        InfoBar.success(
+            title="扫描完成",
+            content=f"找到 {len(files)} 个支持的文件",
+            duration=2000,
+            position=InfoBarPosition.TOP,
+            parent=self,
+        )
+
+        # 添加文件到列表
+        self.add_files(files)
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.accept()
@@ -168,8 +307,25 @@ class BatchProcessInterface(QWidget):
             event.ignore()
 
     def dropEvent(self, event):
-        files = [url.toLocalFile() for url in event.mimeData().urls()]
-        self.add_files(files)
+        """处理拖拽事件，支持文件和文件夹"""
+        urls = event.mimeData().urls()
+        files = []
+        folders = []
+
+        for url in urls:
+            path = url.toLocalFile()
+            if os.path.isfile(path):
+                files.append(path)
+            elif os.path.isdir(path):
+                folders.append(path)
+
+        # 先添加文件
+        if files:
+            self.add_files(files)
+
+        # 递归扫描文件夹
+        for folder in folders:
+            self.scan_and_add_folder(folder)
 
     def add_files(self, file_paths):
         task_type = BatchTaskType(self.task_type_combo.currentText())
@@ -249,25 +405,12 @@ class BatchProcessInterface(QWidget):
             if not exists:
                 self.add_task_to_table(file_path)
 
-    def filter_files(self, file_paths, task_type: BatchTaskType):
-        valid_extensions = {}
-
-        # 根据任务类型设置有效的扩展名
-        if task_type in [
-            BatchTaskType.TRANSCRIBE,
-            BatchTaskType.TRANS_SUB,
-            BatchTaskType.FULL_PROCESS,
-        ]:
-            valid_extensions = {f".{fmt.value}" for fmt in SupportedAudioFormats} | {
-                f".{fmt.value}" for fmt in SupportedVideoFormats
-            }
-        elif task_type == BatchTaskType.SUBTITLE:
-            valid_extensions = {f".{fmt.value}" for fmt in SupportedSubtitleFormats}
-
+    def filter_files(self, file_paths: List[str], task_type: BatchTaskType) -> List[str]:
+        """过滤文件，只保留符合任务类型的文件"""
+        valid_extensions = get_supported_extensions(task_type)
         return [
-            f
-            for f in file_paths
-            if any(f.lower().endswith(ext) for ext in valid_extensions)
+            f for f in file_paths
+            if Path(f).suffix.lower() in valid_extensions
         ]
 
     def add_task_to_table(self, file_path):
@@ -435,8 +578,6 @@ class BatchProcessInterface(QWidget):
             parent=self,
         )
 
-        # 重置暂停按钮文字
-        self.pause_btn.setText("暂停处理")
         # 开始处理任务
         for row in range(self.task_table.rowCount()):
             file_path = self.task_table.item(row, 0).toolTip()
@@ -560,6 +701,24 @@ class BatchProcessInterface(QWidget):
         self.clear_tasks()
 
     def closeEvent(self, event):
+        # 安全停止扫描线程
+        if self.scan_thread is not None:
+            if self.scan_thread.isRunning():
+                self.scan_thread.requestInterruption()
+                if not self.scan_thread.wait(3000):  # 等待3秒
+                    self.scan_thread.terminate()
+                    self.scan_thread.wait()
+            try:
+                self.scan_thread.scan_completed.disconnect()
+            except TypeError:
+                pass
+            self.scan_thread = None
+
+        # 关闭扫描提示
+        if self.scan_tooltip:
+            self.scan_tooltip.close()
+            self.scan_tooltip = None
+
         self._reset_running_tasks_to_waiting()
         self._save_tasks_state()
         self.batch_thread.stop_all()
