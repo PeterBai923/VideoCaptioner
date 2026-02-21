@@ -11,8 +11,6 @@ from app.core.entities import (
     BatchTaskType,
     TranscribeTask,
     SubtitleTask,
-    TranscriptAndSubtitleTask,
-    FullProcessTask,
 )
 from app.core.task_factory import TaskFactory
 from app.thread.transcript_thread import TranscriptThread

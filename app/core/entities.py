@@ -592,41 +592,6 @@ class SubtitleTask:
     subtitle_config: Optional[SubtitleConfig] = None
 
 
-@dataclass
-class TranscriptAndSubtitleTask:
-    """转录和字幕任务类"""
-
-    queued_at: Optional[datetime.datetime] = None
-    started_at: Optional[datetime.datetime] = None
-    completed_at: Optional[datetime.datetime] = None
-
-    # 输入
-    file_path: Optional[str] = None
-
-    # 输出
-    output_path: Optional[str] = None
-
-    transcribe_config: Optional[TranscribeConfig] = None
-    subtitle_config: Optional[SubtitleConfig] = None
-
-
-@dataclass
-class FullProcessTask:
-    """完整处理任务类(转录+字幕)"""
-
-    queued_at: Optional[datetime.datetime] = None
-    started_at: Optional[datetime.datetime] = None
-    completed_at: Optional[datetime.datetime] = None
-
-    # 输入
-    file_path: Optional[str] = None
-    # 输出
-    output_path: Optional[str] = None
-
-    transcribe_config: Optional[TranscribeConfig] = None
-    subtitle_config: Optional[SubtitleConfig] = None
-
-
 class BatchTaskType(Enum):
     """批量处理任务类型"""
 

@@ -6,14 +6,12 @@ from app.common.config import cfg
 from app.config import MODEL_PATH, SUBTITLE_STYLE_PATH
 from app.core.entities import (
     LANGUAGES,
-    FullProcessTask,
     LLMServiceEnum,
     SplitTypeEnum,
     SubtitleConfig,
     SubtitleTask,
     TranscribeConfig,
     TranscribeTask,
-    TranscriptAndSubtitleTask,
 )
 
 
@@ -201,43 +199,3 @@ class TaskFactory:
             need_next_task=need_next_task,
         )
 
-    @staticmethod
-    def create_transcript_and_subtitle_task(
-        file_path: str,
-        output_path: Optional[str] = None,
-        transcribe_config: Optional[TranscribeConfig] = None,
-        subtitle_config: Optional[SubtitleConfig] = None,
-    ) -> TranscriptAndSubtitleTask:
-        """创建转录和字幕任务"""
-        if output_path is None:
-            output_path = str(
-                Path(file_path).parent / f"{Path(file_path).stem}_processed.srt"
-            )
-
-        return TranscriptAndSubtitleTask(
-            queued_at=datetime.datetime.now(),
-            file_path=file_path,
-            output_path=output_path,
-        )
-
-    @staticmethod
-    def create_full_process_task(
-        file_path: str,
-        output_path: Optional[str] = None,
-        transcribe_config: Optional[TranscribeConfig] = None,
-        subtitle_config: Optional[SubtitleConfig] = None,
-    ) -> FullProcessTask:
-        """创建完整处理任务（转录+字幕）"""
-        if output_path is None:
-            output_path = str(
-                Path(file_path).parent
-                / f"{Path(file_path).stem}_final{Path(file_path).suffix}"
-            )
-
-        return FullProcessTask(
-            queued_at=datetime.datetime.now(),
-            file_path=file_path,
-            output_path=output_path,
-            transcribe_config=transcribe_config,
-            subtitle_config=subtitle_config,
-        )

@@ -48,17 +48,6 @@ from app.core.entities import (
 from app.thread.file_download_thread import FileDownloadThread
 from app.thread.modelscope_download_thread import ModelscopeDownloadThread
 
-from ..common.config import cfg
-from ..core.entities import (
-    FasterWhisperModelEnum,
-    TranscribeLanguageEnum,
-    TranscribeModelEnum,
-    VadMethodEnum,
-    WhisperModelEnum,
-)
-from .EditComboBoxSettingCard import EditComboBoxSettingCard
-from .LineEditSettingCard import LineEditSettingCard
-
 # 在文件开头添加常量定义
 FASTER_WHISPER_PROGRAMS = [
     {

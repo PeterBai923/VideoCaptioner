@@ -3,7 +3,6 @@ from enum import Enum
 
 from PyQt5.QtCore import QLocale
 from PyQt5.QtGui import QColor
-import openai
 from qfluentwidgets import (
     qconfig,
     QConfig,
