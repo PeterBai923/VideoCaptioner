@@ -27,6 +27,7 @@ from qfluentwidgets import (
     FluentIcon as FIF,
     MessageBox,
     StateToolTip,
+    BodyLabel,
 )
 import os
 import json
@@ -151,6 +152,30 @@ class BatchProcessInterface(QWidget):
         # 添加到主布局
         main_layout.addLayout(top_layout)
         main_layout.addWidget(self.task_table)
+
+        # 总进度区域
+        self.total_progress_widget = QWidget()
+        total_progress_layout = QHBoxLayout(self.total_progress_widget)
+        total_progress_layout.setContentsMargins(0, 8, 0, 8)
+        total_progress_layout.setSpacing(12)
+
+        self.total_progress_label = BodyLabel("总进度: 0/0 已完成", self)
+        self.total_progress_label.setMinimumWidth(160)
+
+        self.total_progress_bar = ProgressBar()
+        self.total_progress_bar.setRange(0, 100)
+        self.total_progress_bar.setValue(0)
+        self.total_progress_bar.setFixedHeight(24)
+
+        self.total_percent_label = BodyLabel("0%", self)
+        self.total_percent_label.setMinimumWidth(50)
+        self.total_percent_label.setAlignment(Qt.AlignCenter)
+
+        total_progress_layout.addWidget(self.total_progress_label)
+        total_progress_layout.addWidget(self.total_progress_bar, 1)
+        total_progress_layout.addWidget(self.total_percent_label)
+
+        main_layout.addWidget(self.total_progress_widget)
 
         # 连接信号
         self.add_file_btn.clicked.connect(self.on_add_file_clicked)
@@ -438,6 +463,8 @@ class BatchProcessInterface(QWidget):
         status.setFont(font)
         self.task_table.setItem(row, 2, status)
 
+        self.update_total_progress()
+
     def show_context_menu(self, pos):
         row = self.task_table.rowAt(pos.y())
         if row < 0:
@@ -489,6 +516,7 @@ class BatchProcessInterface(QWidget):
                 # 更新状态
                 self.task_table.item(row, 2).setText(status)
                 break
+        self.update_total_progress()
 
     def on_task_error(self, file_path: str, error: str):
         for row in range(self.task_table.rowCount()):
@@ -497,6 +525,7 @@ class BatchProcessInterface(QWidget):
                 status_item.setText(str(BatchTaskStatus.FAILED))
                 status_item.setToolTip(error)
                 break
+        self.update_total_progress()
 
     def on_task_completed(self, file_path: str):
         for row in range(self.task_table.rowCount()):
@@ -504,6 +533,40 @@ class BatchProcessInterface(QWidget):
                 self.task_table.item(row, 2).setText(str(BatchTaskStatus.COMPLETED))
                 self.task_table.item(row, 2).setForeground(QColor("#13A10E"))
                 break
+        self.update_total_progress()
+
+    def update_total_progress(self):
+        """更新总进度显示"""
+        total_count = self.task_table.rowCount()
+
+        if total_count == 0:
+            self.total_progress_label.setText("总进度: 0/0 已完成")
+            self.total_progress_bar.setValue(0)
+            self.total_percent_label.setText("0%")
+            return
+
+        completed_count = 0
+        running_progress_sum = 0
+
+        for row in range(total_count):
+            status_item = self.task_table.item(row, 2)
+            progress_bar = self.task_table.cellWidget(row, 1)
+
+            if status_item and progress_bar:
+                status = status_item.text()
+                progress = progress_bar.value()
+
+                if status == str(BatchTaskStatus.COMPLETED):
+                    completed_count += 1
+                elif status == str(BatchTaskStatus.RUNNING):
+                    running_progress_sum += progress
+
+        total_progress = (completed_count * 100 + running_progress_sum) / max(1, total_count)
+        percentage = int(total_progress)
+
+        self.total_progress_label.setText(f"总进度: {completed_count}/{total_count} 已完成")
+        self.total_progress_bar.setValue(percentage)
+        self.total_percent_label.setText(f"{percentage}%")
 
     def toggle_pause(self):
         # 如果没有正在运行的批处理线程，提示用户
@@ -610,11 +673,13 @@ class BatchProcessInterface(QWidget):
             if self.task_table.item(row, 0).toolTip() == file_path:
                 self.task_table.removeRow(row)
                 break
+        self.update_total_progress()
 
     def clear_tasks(self):
         self.batch_thread.stop_all()
         self.task_table.setRowCount(0)
         self.pause_btn.setText("暂停处理")
+        self.update_total_progress()
 
     def _reset_running_tasks_to_waiting(self):
         for row in range(self.task_table.rowCount()):
